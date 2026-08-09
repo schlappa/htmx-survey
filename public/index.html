@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Survey</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+
+<div id="app">
+  <div id="header" hx-get="/header" hx-trigger="load" hx-target="this" hx-swap="innerHTML"></div>
+
+  <form hx-post="/submit" hx-target="#app" hx-swap="outerHTML">
+    <!-- hx-target/hx-swap are inherited from the form, so both must be restated
+         here or the questions fragment replaces the whole #app div. -->
+    <div id="questions" hx-get="/questions" hx-trigger="load" hx-target="this" hx-swap="innerHTML"></div>
+
+    <p>
+      <label for="comments">Additional comments</label>
+      <span id="comments-required" hidden>(required &mdash; you rated at least one question 1)</span>
+      <br>
+      <textarea id="comments" name="comments" rows="6" cols="60"></textarea>
+    </p>
+
+    <p><button type="submit">Submit</button></p>
+  </form>
+
+  <hr>
+  <p>
+    Testing:
+    <button type="button" id="fill-1">Fill all 1s + "cat1"</button>
+    <button type="button" id="fill-5">Fill all 5s, no comment</button>
+  </p>
+
+  <hr>
+  <p><small>This survey records your IP address, browser user agent, approximate
+  location derived from your IP, and &mdash; on the local network only &mdash; your
+  device's MAC address, together with your answers.</small></p>
+</div>
+
+<script>
+// The textarea becomes required as soon as any question is rated 1.
+document.addEventListener('change', function (e) {
+  if (e.target.type !== 'radio') return;
+  var anyOne = !!document.querySelector('input[type=radio][value="1"]:checked');
+  document.getElementById('comments').required = anyOne;
+  document.getElementById('comments-required').hidden = !anyOne;
+});
+
+// Fills the form so you can see the required-comment rule fire, then submit for real.
+function fillSurvey(rating, comment) {
+  document.querySelectorAll('#questions fieldset').forEach(function (fs) {
+    var radio = fs.querySelector('input[value="' + rating + '"]');
+    if (radio) radio.checked = true;
+  });
+  document.getElementById('comments').value = comment;
+  // Re-dispatch from a radio, since the listener above ignores anything else.
+  var checked = document.querySelector('input[type=radio]:checked');
+  if (checked) checked.dispatchEvent(new Event('change', { bubbles: true }));
+}
+document.getElementById('fill-1').addEventListener('click', function () { fillSurvey(1, 'cat1'); });
+document.getElementById('fill-5').addEventListener('click', function () { fillSurvey(5, ''); });
+</script>
+
+</body>
+</html>

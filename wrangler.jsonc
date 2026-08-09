@@ -1,0 +1,32 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "htmx-survey",
+	"main": "src/worker.js",
+	"compatibility_date": "2026-08-01",
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		// Without this the static /index.html would be served before the Worker runs,
+		// and /results would never reach the auth check.
+		"run_worker_first": [
+			"/results",
+			"/results/*",
+			"/questions",
+			"/header",
+			"/submit",
+			"/simulate"
+		]
+	},
+	"d1_databases": [
+		{
+			// "DB" must match env.DB in src/worker.js — the binding name is how the
+			// Worker reaches the database, not just a label.
+			"binding": "DB",
+			"database_name": "htmx-survey",
+			"database_id": "bb626ab5-21c0-4821-8504-3c58e1878912"
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}

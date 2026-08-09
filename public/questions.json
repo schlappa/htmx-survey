@@ -1,0 +1,18 @@
+{
+  "title": "Customer Experience Survey",
+  "intro": "Rate each statement from 1 (strongly disagree) to 5 (strongly agree).",
+  "scale": {
+    "1": "Strongly disagree",
+    "2": "Disagree",
+    "3": "Neutral",
+    "4": "Agree",
+    "5": "Strongly agree"
+  },
+  "questions": [
+    { "id": "q1", "text": "The agent understood my problem quickly." },
+    { "id": "q2", "text": "I was able to reach a person without a long wait." },
+    { "id": "q3", "text": "My issue was resolved on the first contact." },
+    { "id": "q4", "text": "The agent was courteous and professional." },
+    { "id": "q5", "text": "I would recommend our support to a colleague." }
+  ]
+}
