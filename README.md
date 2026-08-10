@@ -1,82 +1,79 @@
 # htmx-survey
 
-Likert-scale survey. No CSS, no frontend framework. Runs on Cloudflare Workers + D1.
+Multi-user survey builder on Cloudflare Workers + D1. Forms, sections and
+questions live in the database; nothing is read from disk. No CSS.
 
-    public/          index.html, results.html, questions.json — served as static assets
-    src/worker.js    all routes (deployed)
-    server.cjs       the original Node server, for local use only
+    src/worker.js    routing, form builder, submission, results, export
+    src/auth.js      PBKDF2 password hashing and cookie sessions
+    src/render.js    HTML rendering
+    src/xlsx.js      minimal .xlsx writer (no dependency)
     schema.sql       D1 schema
+    scripts/         create-user.mjs
 
-## Deploy to Cloudflare (free)
+## Routes
 
-You need a Cloudflare account. No credit card, no domain.
+| Route | Who |
+|---|---|
+| `/` | login |
+| `/forms` | list your forms |
+| `/forms/:id` | edit header, sections, questions, settings |
+| `/forms/:id/results` | summary + raw responses |
+| `/forms/:id/export` | `.xlsx` download |
+| `/f/:slug` | the public form — no login needed |
 
-    cd /c/code/htmx-survey
+Everything except `/f/:slug` requires a session. Forms are owner-scoped: another
+signed-in user gets a 404, not a 403, so the existence of a form is not leaked.
+Admins (`is_admin = 1`) see every form.
+
+## Setup
+
     npm install
-    npx wrangler login                      # opens a browser once
-    npx wrangler d1 create htmx-survey      # prints a database_id
-
-Paste that id into `wrangler.jsonc`, replacing `REPLACE_WITH_YOUR_DATABASE_ID`, then:
-
     npx wrangler d1 execute htmx-survey --remote --file=./schema.sql
-    npx wrangler secret put RESULTS_PASSWORD    # prompts; this guards /results
+    npm run create-user -- you@example.com "Your Name" "a-strong-password" --admin
     npx wrangler deploy
 
-You get a URL like `https://htmx-survey.<your-subdomain>.workers.dev`. The survey is
-at `/`, the results at `/results`.
+**`schema.sql` is destructive** — it drops every table before recreating them.
+Back up first:
+
+    npx wrangler d1 export htmx-survey --remote --output=./backup.sql
 
 ## Local development
 
-    npm run dev                             # wrangler, on :8787
-    npm run db:local                        # apply schema.sql to the local D1
+    npm run dev                    # :8787, local SQLite under .wrangler/
+    npm run db:local               # apply schema.sql locally
+    npm run create-user -- a@b.c "Name" "pw" --admin --local
 
-`wrangler dev` uses a local SQLite file under `.wrangler/`, so local submissions
-never touch the deployed database. To pass a password locally:
+Local dev uses its own database, so it never touches production data.
 
-    npx wrangler dev --var RESULTS_PASSWORD:testpw
+## Building a form
 
-`npm run node` still runs the original `server.cjs` on :3000 with its own
-`survey.db`. It is not deployed and the two do not share data.
+Create it from `/forms`, then on the edit page set the header text (title,
+subtitle, objective, instructions) and add sections. A section is either:
 
-## Editing the survey
+- **matrix** — a Likert grid: the scale runs across the top, one row per question
+- **text** — a single free-text box
 
-`public/questions.json` holds the title, intro, scale labels and questions. Add or
-remove entries in `questions`; both the form and the results tables follow. It is
-bundled into the Worker at build time, so a change needs a redeploy.
+Per-form settings:
 
-## Results and authentication
+- **scale 5→1** — column order. On by default, matching the Univalle layout.
+- **require comment** — rating any question the *lowest* scale value makes a
+  free-text section mandatory. Needs at least one text section to have an effect.
+- **track metadata** — off by default, so forms are anonymous. When on, each
+  response records IP, coordinates, city and user agent from Cloudflare's edge.
+- **is_open** — closed forms show a notice instead of the questions.
 
-`/results` shows per-question averages with a 1-5 distribution, plus every raw
-response newest first. Both tables are htmx fragments that reload every 30 seconds.
+## Results and export
 
-The results routes are protected by HTTP Basic auth. Any username works; the
-password is the `RESULTS_PASSWORD` secret. **If the secret is unset the page is
-locked, not open** — it fails closed. Two buttons there seed canned responses
-(all 1s with the comment `cat1`, all 5s with none); seeded rows are flagged
-`simulated` in the Source column. Clear them with:
+`/forms/:id/results` shows per-question averages with the rating distribution,
+free-text answers, and one row per response. `/forms/:id/export` produces a real
+`.xlsx` (verified opening in Excel) with one row per response and one column per
+question.
 
-    npx wrangler d1 execute htmx-survey --remote \
-      --command="DELETE FROM responses WHERE simulated = 1"
+## Notes
 
-## Data collected
-
-Each row stores the answers, the comment, `ip`, `latitude`, `longitude`,
-`location` (city name), `user_agent` and the `simulated` flag.
-
-- Location comes from Cloudflare's edge, which resolves the visitor's IP as the
-  request arrives. No third-party API, no rate limit, nothing sent off-network.
-- The coordinates are the **centroid of the visitor's city**, not their real
-  position: everyone on one connection gets identical values and the error is
-  kilometres. The city name is the tooltip on the coordinates.
-- There is no MAC column. The Node version read it from the local ARP cache,
-  which needs a shared network segment — it was always null for anyone off the
-  LAN, and Workers have no OS to ask.
-- Two buttons on the survey page fill the form for testing without submitting.
-  Delete that "Testing" paragraph in `public/index.html` before sending the
-  survey to real respondents.
-
-## Free tier
-
-D1 allows 5 GB, 5M row reads/day and 100k row writes/day; Workers allow 100k
-requests/day. A survey will not approach any of these. Workers do not sleep, so
-there is no cold-start delay for respondents.
+- Passwords are PBKDF2-SHA256, 100k iterations, per-user salt. Sessions are
+  opaque random tokens in an HttpOnly, Secure, SameSite=Lax cookie (30 days).
+- Public form URLs use a 9-character random slug, so the link is the access
+  control. Anyone with it can respond.
+- There is no self-signup: accounts are created with `create-user.mjs`.
+- Free tier: D1 allows 5 GB, 5M row reads and 100k row writes per day.
